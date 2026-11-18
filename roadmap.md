@@ -2,4 +2,6 @@
 
 - [x] Enable Lovable Cloud for server-side webhook access.
 - [x] Build the Podcaster interface and secure webhook-backed audio generation.
-- [ ] Verify generation, playback, tests, and preview diagnostics.
+- [x] Switch the podcast generator to the replacement webhook address.
+- [x] Verify the podcast UI, phone layout, request payload, and validation tests.
+- [ ] Verify successful audio playback when the webhook is available; it currently responds with HTTP 404.

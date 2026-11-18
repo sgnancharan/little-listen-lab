@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { parsePodcastAudioResponse, podcastRequestSchema } from "@/lib/podcast";
 
 const PODCAST_WEBHOOK_URL =
-  "https://a86b-160-30-36-71.ngrok-free.app/webhook-test/0a19b3a7-0956-4d86-a19d-a7adf799990c";
+  "https://f90a-160-30-36-71.ngrok-free.app/webhook-test/0a19b3a7-0956-4d86-a19d-a7adf799990c";
 
 export const generatePodcast = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => podcastRequestSchema.parse(data))
