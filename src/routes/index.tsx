@@ -1,12 +1,24 @@
 import { useServerFn } from "@tanstack/react-start";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRight, Headphones, Sparkles } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { ArrowUpRight, Check, Headphones, Link2, RotateCcw, Sparkles } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import podcastStudio from "@/assets/podcast-studio.jpg";
 import { generatePodcast } from "@/lib/podcast.functions";
-import { podcastTopicSchema } from "@/lib/podcast";
+import { DEFAULT_PODCAST_WEBHOOK_URL, podcastTopicSchema, validateWebhookUrl } from "@/lib/podcast";
+
+const LOCAL_STORAGE_WEBHOOK_KEY = "podcaster_webhook_url";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -36,6 +48,72 @@ function PodcastStudio() {
   const [status, setStatus] = useState<"idle" | "ready" | "error">("idle");
   const [validationMessage, setValidationMessage] = useState("");
 
+  // Webhook configuration state
+  const [webhookUrl, setWebhookUrl] = useState<string>("");
+  const [isWebhookOpen, setIsWebhookOpen] = useState(false);
+  const [tempWebhookUrl, setTempWebhookUrl] = useState("");
+  const [webhookError, setWebhookError] = useState("");
+  const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(LOCAL_STORAGE_WEBHOOK_KEY);
+      if (saved) {
+        setWebhookUrl(saved);
+        setTempWebhookUrl(saved);
+      } else {
+        setTempWebhookUrl(DEFAULT_PODCAST_WEBHOOK_URL);
+      }
+    }
+  }, []);
+
+  function handleOpenWebhookDialog(open: boolean) {
+    setIsWebhookOpen(open);
+    if (open) {
+      setTempWebhookUrl(webhookUrl || DEFAULT_PODCAST_WEBHOOK_URL);
+      setWebhookError("");
+      setIsSaved(false);
+    }
+  }
+
+  function handleSaveWebhook() {
+    const trimmed = tempWebhookUrl.trim();
+    if (!trimmed) {
+      handleResetWebhook();
+      return;
+    }
+
+    const validation = validateWebhookUrl(trimmed);
+    if (!validation.success) {
+      setWebhookError(
+        validation.error.issues[0]?.message || "Invalid URL. Please enter a valid HTTP/HTTPS URL.",
+      );
+      setIsSaved(false);
+      return;
+    }
+
+    setWebhookError("");
+    setWebhookUrl(trimmed);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LOCAL_STORAGE_WEBHOOK_KEY, trimmed);
+    }
+    setIsSaved(true);
+    setTimeout(() => {
+      setIsWebhookOpen(false);
+      setIsSaved(false);
+    }, 700);
+  }
+
+  function handleResetWebhook() {
+    setWebhookUrl("");
+    setTempWebhookUrl(DEFAULT_PODCAST_WEBHOOK_URL);
+    setWebhookError("");
+    setIsSaved(false);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(LOCAL_STORAGE_WEBHOOK_KEY);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -52,9 +130,18 @@ function PodcastStudio() {
     setIsGenerating(true);
 
     try {
-      const result = await generate({ data: { text: parsedTopic.data } });
+      const result = await generate({
+        data: {
+          text: parsedTopic.data,
+          ...(webhookUrl ? { webhookUrl } : {}),
+        },
+      });
+
       if (!result.ok) {
         setStatus("error");
+        setValidationMessage(
+          "Oops! Something went wrong. Please check your webhook URL in the top-right settings and try again.",
+        );
         return;
       }
 
@@ -63,6 +150,7 @@ function PodcastStudio() {
       setStatus("ready");
     } catch {
       setStatus("error");
+      setValidationMessage("Oops! Something went wrong. Please try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -84,10 +172,136 @@ function PodcastStudio() {
           </span>
           <span>Podcaster</span>
         </a>
-        <span className="topbar-note">
-          <span className="online-dot" aria-hidden="true" />
-          Your little corner of audio
-        </span>
+
+        <div className="topbar-actions">
+          <span className="topbar-note">
+            <span className="online-dot" aria-hidden="true" />
+            Your little corner of audio
+          </span>
+
+          <Dialog open={isWebhookOpen} onOpenChange={handleOpenWebhookDialog}>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                className={`webhook-trigger-btn ${webhookUrl ? "has-custom" : ""}`}
+                aria-label="Configure Webhook URL"
+                title={
+                  webhookUrl
+                    ? `Custom Webhook active: ${webhookUrl}`
+                    : "Configure Webhook URL (ngrok tunnel)"
+                }
+              >
+                <Link2 size={16} strokeWidth={2.2} />
+                <span className="webhook-status-dot" aria-hidden="true" />
+              </button>
+            </DialogTrigger>
+            <DialogContent className="webhook-dialog-card">
+              <DialogHeader>
+                <div className="webhook-dialog-header-badge">
+                  <span className="webhook-badge-icon">
+                    <Link2 size={18} strokeWidth={2.2} />
+                  </span>
+                  <div>
+                    <DialogTitle className="webhook-dialog-title">
+                      Webhook Configuration
+                    </DialogTitle>
+                    <DialogDescription className="webhook-dialog-desc">
+                      Using a free ngrok tunnel? Paste your current ngrok URL below. It will be
+                      saved locally in your browser for podcast generation.
+                    </DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="webhook-dialog-body">
+                <div className="webhook-input-group">
+                  <label htmlFor="webhook-url-input" className="webhook-label">
+                    Active Webhook URL
+                  </label>
+                  <Input
+                    id="webhook-url-input"
+                    type="url"
+                    placeholder="https://xxxx.ngrok-free.app/webhook-test/..."
+                    value={tempWebhookUrl}
+                    onChange={(e) => {
+                      setTempWebhookUrl(e.target.value);
+                      if (webhookError) setWebhookError("");
+                      if (isSaved) setIsSaved(false);
+                    }}
+                    className={`webhook-input ${webhookError ? "webhook-input-error" : ""}`}
+                  />
+                  {webhookError && <p className="webhook-error-text">{webhookError}</p>}
+                  {isSaved && (
+                    <p className="webhook-success-text">
+                      <Check size={14} /> Webhook URL saved successfully!
+                    </p>
+                  )}
+                </div>
+
+                <div className="webhook-default-box">
+                  <div className="webhook-default-header">
+                    <span className="webhook-default-title">Default Webhook</span>
+                    <button
+                      type="button"
+                      className="webhook-use-default-btn"
+                      onClick={() => {
+                        setTempWebhookUrl(DEFAULT_PODCAST_WEBHOOK_URL);
+                        setWebhookError("");
+                        setIsSaved(false);
+                      }}
+                    >
+                      Paste default
+                    </button>
+                  </div>
+                  <code className="webhook-default-code">{DEFAULT_PODCAST_WEBHOOK_URL}</code>
+                </div>
+
+                {webhookUrl ? (
+                  <div className="webhook-active-tag">
+                    <span className="webhook-tag-dot" />
+                    <span>Custom webhook active</span>
+                  </div>
+                ) : (
+                  <div className="webhook-default-tag">
+                    <span>Using default webhook URL</span>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="webhook-dialog-footer">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetWebhook}
+                  disabled={!webhookUrl && tempWebhookUrl === DEFAULT_PODCAST_WEBHOOK_URL}
+                  className="webhook-reset-btn"
+                >
+                  <RotateCcw size={13} />
+                  Reset to Default
+                </Button>
+                <div className="webhook-action-buttons">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsWebhookOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSaveWebhook}
+                    className="webhook-save-btn"
+                  >
+                    Save Webhook
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </header>
 
       <section className="studio-layout" id="home" aria-labelledby="studio-title">
@@ -195,7 +409,9 @@ function PodcastStudio() {
 
         <aside className="studio-art" aria-label="Podcast microphone and headphones illustration">
           <span className="art-caption">
-            <span className="caption-sparkle" aria-hidden="true">✳</span>
+            <span className="caption-sparkle" aria-hidden="true">
+              ✳
+            </span>
             a show of your own
           </span>
           <img
@@ -206,17 +422,23 @@ function PodcastStudio() {
             fetchPriority="high"
           />
           <div className="art-note">
-            <span className="note-heart" aria-hidden="true">♡</span>
+            <span className="note-heart" aria-hidden="true">
+              ♡
+            </span>
             Made for your curious mind
           </div>
-          <span className="floating-sparkle" aria-hidden="true">✦</span>
+          <span className="floating-sparkle" aria-hidden="true">
+            ✦
+          </span>
           <span className="floating-dot" aria-hidden="true" />
         </aside>
       </section>
 
       <footer className="podcast-footer">
         <span>A new perspective, one play at a time.</span>
-        <span className="footer-flower" aria-hidden="true">✿</span>
+        <span className="footer-flower" aria-hidden="true">
+          ✿
+        </span>
       </footer>
     </main>
   );

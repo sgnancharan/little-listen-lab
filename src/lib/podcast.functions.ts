@@ -1,33 +1,41 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { parsePodcastAudioResponse, podcastRequestSchema } from "@/lib/podcast";
-
-const PODCAST_WEBHOOK_URL =
-  "https://f90a-160-30-36-71.ngrok-free.app/webhook-test/0a19b3a7-0956-4d86-a19d-a7adf799990c";
+import {
+  DEFAULT_PODCAST_WEBHOOK_URL,
+  parsePodcastAudioResponse,
+  podcastRequestSchema,
+} from "@/lib/podcast";
 
 export const generatePodcast = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => podcastRequestSchema.parse(data))
+  .validator((data: unknown) => podcastRequestSchema.parse(data))
   .handler(async ({ data }) => {
+    const targetWebhookUrl = data.webhookUrl || DEFAULT_PODCAST_WEBHOOK_URL;
     try {
-      const response = await fetch(PODCAST_WEBHOOK_URL, {
+      const response = await fetch(targetWebhookUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ text: data.text }),
         signal: AbortSignal.timeout(90_000),
       });
 
       if (!response.ok) {
         console.warn("Podcast webhook returned an unsuccessful status:", response.status);
-        return { ok: false as const };
+        return {
+          ok: false as const,
+          error: `Webhook returned status ${response.status}`,
+        };
       }
 
       const audioFile = parsePodcastAudioResponse(await response.json());
       return { ok: true as const, audioFile };
     } catch (error) {
       console.warn("Podcast generation failed:", error);
-      return { ok: false as const };
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Failed to connect to webhook",
+      };
     }
   });
